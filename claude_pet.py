@@ -11,7 +11,8 @@ except ImportError:
     Image = None
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-SAVE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pet_save.json")
+HERE = os.path.dirname(os.path.abspath(__file__))
+SAVE = os.path.join(HERE, "pet_save.json")
 MAX_AFF = 100
 GIFT_EVERY = 20  # 친밀도가 이 값의 배수를 넘을 때마다 선물
 GIFTS = [("황금 목걸이", "gold necklace"), ("지렁이", "earthworm"), ("꿀사과", "honeycrisp apple"),
@@ -20,7 +21,7 @@ GIFTS = [("황금 목걸이", "gold necklace"), ("지렁이", "earthworm"), ("�
          ("컵라면", "instant noodles cup"), ("후라이드 치킨", "fried chicken"), ("피자 한 판", "pizza"),
          ("공룡 화석", "dinosaur fossil"), ("삽", "shovel"), ("고구마", "sweet potato"),
          ("두루마리 휴지", "toilet paper roll"), ("다이아몬드", "diamond")]  # 선물 이미지는 Wikimedia Commons 검색
-OUTFITS = ["파티모자", "왕관", "선글라스", "빨간 목도리", "리본"]
+OUTFITS = ["밀짚모자", "선글라스", "중절모", "티아라"]  # 옷은 그림으로 그림 (사진은 어색해서 안 씀)
 PLACES = ["길가 쓰레기통에서", "옆집 빨랫줄에서", "분실물 센터에서", "택배 상자 밑에서", "공원 벤치에서", "제 주머니를 뒤졌더니"]
 SORRY = ["죄송해요… 제가 실수했어요 ㅠㅠ", "앗, 제가 틀렸어요. 벌 받을게요!", "잘못했어요… 엉덩이 때찌 해주세요 🥺"]
 PET = ["헤헤 좋아요~", "쓰담쓰담 최고예요 💕", "더 해주세요!", "오늘도 열심히 할게요!"]
@@ -33,6 +34,7 @@ try:
 except Exception:
     save = {"aff": 0, "inv": {}}
 save.setdefault("outfit", [])
+save["outfit"] = [x for x in save["outfit"] if x in OUTFITS]  # 옛 그림 옷은 정리
 def flush():
     json.dump(save, open(SAVE, "w", encoding="utf-8"), ensure_ascii=False)
 
@@ -52,8 +54,12 @@ mode, gen, pgen = "auto", 0, 0  # mode: auto(알아서) / roam(계속 움직임)
 ORANGE, DARK = "#D97757", "#3b2a22"
 sq = [1.0, 1.0]  # 말랑 변형(가로, 세로 배율)
 
+def rrect(x0, y0, x1, y1, r=8, **kw):  # 모서리가 둥근 사각형 (smooth 다각형)
+    pts = [x0+r, y0, x1-r, y0, x1, y0, x1, y0+r, x1, y1-r, x1, y1, x1-r, y1, x0+r, y1, x0, y1, x0, y1-r, x0, y0+r, x0, y0]
+    return c.create_polygon(pts, smooth=True, **kw)
+
 def limbs(m, f, arm):  # 팔다리 위치. struggle(잡혀서 발버둥)이면 프레임 f에 따라 번갈아 휘두름
-    if m == "struggle":
+    if m in ("struggle", "climb", "farm", "rummage"):
         return [(40, 100, 62, 130) if f == 0 else (40, 150, 62, 180),
                 (178, 150, 200, 180) if f == 0 else (178, 100, 200, 130),
                 (66, 205, 88, 234) if f == 0 else (90, 200, 112, 224),
@@ -81,44 +87,49 @@ def icon(kind, x, y, o):  # 건네는 물건 아이콘: 옷(티셔츠) / 선물�
         c.create_oval(x - 10, y - 24, x, y - 13, outline="#ffd84d", width=3, **o)
         c.create_oval(x, y - 24, x + 10, y - 13, outline="#ffd84d", width=3, **o)
 
-def wear(o, front):
+OUTFIT_DIR = os.path.join(HERE, "outfit_img")  # 옷 사진(누끼 PNG) 보관 (git 제외)
+os.makedirs(OUTFIT_DIR, exist_ok=True)
+OUTFIT_Q = {"밀짚모자": "straw hat", "중절모": "fedora hat", "선글라스": "sunglasses", "티아라": "tiara museum jewellery"}
+OUTFIT_EX = " -portrait -man -woman -girl -boy -people -person -model -wearing -painting -singer -actress -queen -princess"
+OUTFIT_SHAPE = {"밀짚모자": (0.8, 2.5), "중절모": (0.8, 2.5), "선글라스": (1.6, 4.5), "티아라": (1.3, 5)}  # 가로/세로 비율 허용 범위
+# 입은 모습: (그릴 가로폭, 기준점 방향, x, y)  좌표는 축소 전 캐릭터 좌표
+OUTFIT_SPEC = {"밀짚모자": (190, "s", 120, 100), "중절모": (150, "s", 120, 98), "티아라": (90, "s", 120, 106), "선글라스": (100, "center", 120, 128)}
+worn_ph = {}  # 옷 PhotoImage 캐시 (참조를 들고 있어야 함)
+def worn_image(n):
+    if n in worn_ph: return worn_ph[n]
+    path = os.path.join(OUTFIT_DIR, n + ".png")
+    if not (Image and os.path.exists(path)): return None
+    im = Image.open(path).convert("RGBA"); w = max(1, int(OUTFIT_SPEC[n][0] * S)); h = max(1, int(im.height * w / im.width))
+    worn_ph[n] = ImageTk.PhotoImage(im.resize((w, h), Image.LANCZOS)); return worn_ph[n]
+
+def wear(o, front):  # 입은 옷: 사진 누끼 우선, 없으면 그림 (선글라스는 앞모습일 때만)
     for n in save["outfit"]:
-        if n == "파티모자":  # 줄무늬 고깔 + 챙 + 방울
-            c.create_polygon(95, 92, 120, 36, 145, 92, fill="#6c8cff", outline=DARK, width=2, **o)
-            for y1, y2 in ((58, 66), (74, 82)):  # 노란 줄무늬
-                h1, h2 = (y1 - 36) / 56 * 25, (y2 - 36) / 56 * 25
-                c.create_polygon(120 - h1, y1, 120 + h1, y1, 120 + h2, y2, 120 - h2, y2, fill="#ffe14d", outline="", **o)
-            c.create_rectangle(93, 88, 147, 95, fill="#4b66d6", outline=DARK, width=2, **o)
-            c.create_oval(112, 28, 128, 44, fill="#ff7fb0", outline=DARK, **o)
-            c.create_oval(116, 31, 120, 35, fill="white", outline="", **o)
-        elif n == "왕관":  # 보석 박힌 왕관
-            c.create_polygon(85, 94, 85, 60, 102, 78, 120, 52, 138, 78, 155, 60, 155, 94, fill="#f5c518", outline=DARK, width=2, **o)
-            c.create_rectangle(85, 82, 155, 94, fill="#d9a400", outline=DARK, width=2, **o)
-            for gx, col in ((97, "#e23b3b"), (120, "#3b82e2"), (143, "#e23b3b")):
-                c.create_oval(gx - 5, 84, gx + 5, 93, fill=col, outline=DARK, **o)
-            for px, py in ((85, 60), (120, 52), (155, 60)):  # 꼭대기 진주
-                c.create_oval(px - 4, py - 5, px + 4, py + 3, fill="white", outline=DARK, **o)
-            c.create_line(92, 70, 98, 82, fill="#fff2a8", width=2, **o)
+        ph = worn_image(n)
+        if ph:
+            if not (n == "선글라스" and not front):
+                _, anchor, x, y = OUTFIT_SPEC[n]; c.create_image(x, y, image=ph, anchor=anchor, **o)
+            continue
+        if n == "밀짚모자":  # 챙 넓은 밀짚모자: 챙 + 둥근 머리 + 빨간 띠 + 결
+            c.create_oval(58, 84, 182, 106, fill="#e8c874", outline=DARK, width=2, **o)
+            c.create_arc(86, 54, 154, 100, start=0, extent=180, style="chord", fill="#f0d58a", outline=DARK, width=2, **o)
+            c.create_rectangle(87, 84, 153, 92, fill="#c0392b", outline=DARK, **o)
+            for x in range(92, 150, 10): c.create_line(x, 62 + abs(x - 120) // 4, x, 82, fill="#d4b05c", **o)
+        elif n == "중절모":  # 챙 + 눌린 크라운 + 검은 띠
+            c.create_oval(72, 86, 168, 102, fill="#55555f", outline=DARK, width=2, **o)
+            c.create_polygon(92, 90, 92, 66, 104, 58, 120, 66, 136, 58, 148, 66, 148, 90, fill="#6b6b78", outline=DARK, width=2, **o)
+            c.create_rectangle(92, 80, 148, 90, fill="#222", outline=DARK, **o)
+            c.create_rectangle(134, 78, 144, 92, fill="#c0392b", outline=DARK, **o)
+        elif n == "티아라":  # 작은 은색 티아라 + 보석
+            c.create_polygon(94, 90, 98, 74, 108, 84, 120, 64, 132, 84, 142, 74, 146, 90, fill="#e8e8f0", outline=DARK, width=2, **o)
+            c.create_rectangle(94, 88, 146, 95, fill="#cfcfe0", outline=DARK, width=2, **o)
+            c.create_oval(115, 67, 125, 77, fill="#ff5d8f", outline=DARK, **o)
+            for gx in (98, 142): c.create_oval(gx - 3, 71, gx + 3, 77, fill="#5ab4f0", outline=DARK, **o)
         elif n == "선글라스" and front:  # 번쩍이는 렌즈 + 다리
             c.create_line(84, 122, 62, 118, fill="#222", width=3, **o); c.create_line(156, 122, 178, 118, fill="#222", width=3, **o)
             c.create_oval(82, 112, 108, 138, fill="#1a1a1a", outline="#555", width=2, **o)
             c.create_oval(132, 112, 158, 138, fill="#1a1a1a", outline="#555", width=2, **o)
             c.create_arc(106, 114, 134, 130, start=0, extent=180, style="arc", width=3, outline="#222", **o)
             for gx in (89, 139): c.create_line(gx, 118, gx + 6, 114, fill="white", width=2, **o)
-        elif n == "빨간 목도리":  # 줄무늬 + 매듭 + 꼬리 + 술
-            c.create_rectangle(58, 98, 182, 114, fill="#d63a3a", outline=DARK, width=2, **o)
-            for sx in range(66, 180, 16): c.create_line(sx, 99, sx, 113, fill="white", width=3, **o)
-            c.create_rectangle(148, 114, 166, 156, fill="#d63a3a", outline=DARK, width=2, **o)
-            for sy in (124, 138): c.create_line(149, sy, 165, sy, fill="white", width=3, **o)
-            for fx in range(150, 166, 4): c.create_line(fx, 156, fx, 163, fill="#d63a3a", width=2, **o)
-            c.create_oval(140, 100, 158, 120, fill="#b52b2b", outline=DARK, width=2, **o)
-        elif n == "리본":  # 물방울 리본: 양쪽 고리 + 매듭 + 꼬리
-            c.create_polygon(152, 100, 160, 120, 166, 116, fill="#ff7fb0", outline=DARK, **o)
-            c.create_polygon(152, 100, 144, 120, 138, 116, fill="#ff7fb0", outline=DARK, **o)
-            c.create_oval(152, 74, 180, 104, fill="#ff7fb0", outline=DARK, width=2, **o)
-            c.create_oval(124, 74, 152, 104, fill="#ff7fb0", outline=DARK, width=2, **o)
-            for dx, dy in ((165, 84), (137, 84), (165, 94), (137, 94)): c.create_oval(dx - 2, dy - 2, dx + 2, dy + 2, fill="white", outline="", **o)
-            c.create_oval(144, 83, 160, 97, fill="#ff4f93", outline=DARK, width=2, **o)
 
 def draw(m, gift=None, f=0):
     if m == "plank": return draw_plank(f)
@@ -127,17 +138,18 @@ def draw(m, gift=None, f=0):
     o = dict(tags="body")
     arm = (178, 122, 226, 142) if gift else (178, 130, 200, 160)  # 선물 줄 땐 팔을 쭉 뻗음
     for box in limbs(m, f, arm):
-        c.create_rectangle(*box, fill=ORANGE, outline=DARK, width=2, **o)
-    c.create_rectangle(60, 90, 180, 205, fill=ORANGE, outline=DARK, width=2, **o)
+        rrect(*box, r=10, fill=ORANGE, outline=DARK, width=2, **o)
+    rrect(60, 90, 180, 205, r=24, fill=ORANGE, outline=DARK, width=2, **o)
     if m == "sit":  # 앉기: 다리를 앞으로 뻗음
         c.delete("body"); o = dict(tags="body")
         for box in [(40, 130, 62, 160), (178, 130, 200, 160), (62, 205, 112, 222), (128, 205, 178, 222)]:
-            c.create_rectangle(*box, fill=ORANGE, outline=DARK, width=2, **o)
-        c.create_rectangle(60, 90, 180, 205, fill=ORANGE, outline=DARK, width=2, **o)
-    front = m not in ("sorry", "hit")
+            rrect(*box, r=10, fill=ORANGE, outline=DARK, width=2, **o)
+        rrect(60, 90, 180, 205, r=24, fill=ORANGE, outline=DARK, width=2, **o)
+    front = m not in ("sorry", "hit", "climb")
     if not front:  # 뒤돌아서 엉덩이를 내밀기 (얼굴 없음)
-        c.create_oval(66, 140, 120, 205, fill="#f4a7a0", outline=DARK, width=2, **o)
-        c.create_oval(120, 140, 174, 205, fill="#f4a7a0", outline=DARK, width=2, **o)
+        if m != "climb":  # 사다리 오를 땐 뒷모습만 (엉덩이 볼터치 없음)
+            c.create_oval(66, 140, 120, 205, fill="#f4a7a0", outline=DARK, width=2, **o)
+            c.create_oval(120, 140, 174, 205, fill="#f4a7a0", outline=DARK, width=2, **o)
         if m == "hit":
             anger(120, 172, o)
     else:
@@ -156,6 +168,10 @@ def draw(m, gift=None, f=0):
         c.create_line(101, 91, 139, 91, fill=ORANGE, width=3, **o)
         c.create_oval(110, 144, 130, 164, fill="#7a2e2e", outline=DARK, **o)
         anger(152, 74, o)
+    if m == "farm":  # 괭이질
+        y = 25 * f
+        c.create_line(205, 108 + y, 232, 160 + y, width=4, fill="#8b5a2b", **o)
+        c.create_polygon(226, 156 + y, 246, 160 + y, 238, 172 + y, fill="#b0b0b0", outline=DARK, **o)
     wear(o, front)
     if gift:
         if gift.strip(): icon(gift, 236, 132, o)
@@ -172,8 +188,8 @@ def draw_plank(f):  # 엎드려 뻗쳐: 옆모습으로 팔굽혀펴기 (f=1이�
     global mood; mood = "plank"
     c.delete("body"); o = dict(tags="body"); d = 16 * f
     for box in [(60, 200 + d, 82, 232), (146, 200 + d, 168, 232)]:  # 뒷다리, 앞팔
-        c.create_rectangle(*box, fill=ORANGE, outline=DARK, width=2, **o)
-    c.create_rectangle(50, 160 + d, 180, 202 + d, fill=ORANGE, outline=DARK, width=2, **o)
+        rrect(*box, r=10, fill=ORANGE, outline=DARK, width=2, **o)
+    rrect(50, 160 + d, 180, 202 + d, r=18, fill=ORANGE, outline=DARK, width=2, **o)
     c.create_line(150, 172 + d, 162, 180 + d, 150, 188 + d, width=3, fill=DARK, **o)  # > 힘든 눈
     sweat(192, 150 + d, o)
     finish()
@@ -222,19 +238,37 @@ def conv(e):  # 축소 전 좌표로 환산
 
 IMGQ = queue.Queue()
 UA = {"User-Agent": "ClaudePetToy/1.0"}
-def cutout(im, size=150):  # 배경(흰색 등)을 지워 오려낸 스티커처럼 + 반투명 없애기(투명색 창이라)
-    im = im.convert("RGBA")
-    if im.getchannel("A").getextrema()[0] == 255:
-        for xy in ((0, 0), (im.width - 1, 0), (0, im.height - 1), (im.width - 1, im.height - 1)):
-            ImageDraw.floodfill(im, xy, (255, 0, 255, 0), thresh=45)
-    im.putalpha(im.getchannel("A").point(lambda v: 255 if v > 128 else 0))
+RB, RB_LOCK = [], threading.Lock()
+def rembg_ready():  # AI 누끼 모델은 처음 한 번만 불러옴 (없으면 False)
+    with RB_LOCK:
+        if not RB:
+            try:
+                from rembg import remove, new_session
+                RB.extend([remove, new_session("u2net")])
+            except Exception:
+                RB.extend([None, None])
+    return RB[0] is not None
+threading.Thread(target=rembg_ready, daemon=True).start()  # 시작할 때 미리 불러둠
+
+def cutout(im, size=150, thresh=45):  # 물건만 오려내기. rembg가 있으면 깔끔, 없으면 흰 배경만 지움
+    if Image and rembg_ready():
+        im = RB[0](im, session=RB[1]).convert("RGBA")
+        a = im.getchannel("A").point(lambda v: 255 if v > 128 else 0); im.putalpha(a)  # 투명색 창이라 반투명 금지
+        bb = a.getbbox()
+        if bb: im = im.crop(bb)
+    else:
+        im = im.convert("RGBA")
+        if im.getchannel("A").getextrema()[0] == 255:
+            for xy in ((0, 0), (im.width - 1, 0), (0, im.height - 1), (im.width - 1, im.height - 1)):
+                ImageDraw.floodfill(im, xy, (255, 0, 255, 0), thresh=thresh)
+        im.putalpha(im.getchannel("A").point(lambda v: 255 if v > 128 else 0))
     im.thumbnail((size, size)); return im
 
-def fetch_gift(name, q):
+def fetch_gift(name, q, size=150, ok=None, ex="", shape=None, limit=12):
     def run():
         try:
             u = "https://commons.wikimedia.org/w/api.php?" + urllib.parse.urlencode(dict(
-                action="query", generator="search", gsrnamespace=6, gsrsearch=q + " filetype:bitmap", gsrlimit=12,
+                action="query", generator="search", gsrnamespace=6, gsrsearch=q + ex + " filetype:bitmap", gsrlimit=limit,
                 prop="imageinfo", iiprop="url|mime", iiurlwidth=400, format="json"))
             pages = list(json.load(urllib.request.urlopen(urllib.request.Request(u, headers=UA), timeout=15))["query"]["pages"].values())
             random.shuffle(pages)
@@ -242,10 +276,14 @@ def fetch_gift(name, q):
                 ii = p["imageinfo"][0]
                 if ii["mime"] in ("image/jpeg", "image/png", "image/gif", "image/webp"):
                     b = urllib.request.urlopen(urllib.request.Request(ii["thumburl"], headers=UA), timeout=15).read()
-                    IMGQ.put((name, cutout(Image.open(io.BytesIO(b))))); return
+                    im = Image.open(io.BytesIO(b))
+                    if ok and not ok(im): continue  # 예: 사다리는 세로로 긴 사진만
+                    cut = cutout(im, size)
+                    if shape and not (shape[0] <= cut.width / cut.height <= shape[1]): continue  # 엉뚱한 모양 제외
+                    IMGQ.put((name, cut)); return
         except Exception:
             pass
-        IMGQ.put((name, None))  # 실패하면 이모지 상자로
+        IMGQ.put((name, None))  # 실패하면 그린 그림/상자로
     threading.Thread(target=run, daemon=True).start()
 
 gift_ph = []  # PhotoImage는 참조를 들고 있어야 안 사라짐
@@ -265,11 +303,13 @@ def curtain(mid, end, t=0, phase=0):  # 탈의실 커튼: 닫힘 → (그 사이
     c.delete("curtain"); end()
 
 def give(item, outfit, img=None):  # 선물/옷을 내밀고 3.5초 뒤 건네줌. 옷은 커튼 치고 갈아입음
+    if outfit and img is not None: img.save(os.path.join(OUTFIT_DIR, item + ".png")); worn_ph.pop(item, None)
+    shown = None
+    if img: shown = img.copy(); shown.thumbnail((150, 150))
     place = random.choice(PLACES)
-    show(f"친밀도 {save['aff']}! {place} 이거 주웠어요. 받아주세요!" + ("" if outfit else f" → {item}"),
-         "happy", "👕" if outfit else (" " if img else "🎁"))
-    if img:  # 몸보다 큰 선물을 번쩍 들어 보여줌
-        gift_ph[:] = [ImageTk.PhotoImage(img)]; c.create_image(268, 188, image=gift_ph[0], tags="giftimg")
+    show(f"친밀도 {save['aff']}! {place} 이거 주웠어요. 받아주세요! → {item}", "happy", " " if shown else ("👕" if outfit else "🎁"))
+    if shown:  # 몸보다 큰 물건을 손 옆에 내밀어 보여줌
+        gift_ph[:] = [ImageTk.PhotoImage(shown)]; c.create_image(268, 188, image=gift_ph[0], tags="giftimg")
     def swap():
         save["outfit"].append(item); draw("happy"); flush()
     def done():
@@ -287,7 +327,10 @@ def pet():
     hearts()
     if save["aff"] // GIFT_EVERY > before:
         left = [x for x in OUTFITS if x not in save["outfit"]]
-        if left and random.random() < 0.5: give(random.choice(left), True)
+        if left and random.random() < 0.5:
+            n = random.choice(left)
+            if Image: speak("앗, 입을 걸 주워왔어요… 잠깐만요!"); fetch_gift("__outfit__" + n, OUTFIT_Q[n], 300, None, OUTFIT_EX, OUTFIT_SHAPE[n])
+            else: give(n, True)
         elif Image:
             name, q = random.choice(GIFTS); speak("앗, 뭔가 주워왔어요… 잠깐만요!"); fetch_gift(name, q)
         else: give(random.choice(GIFTS)[0], False)
@@ -333,9 +376,163 @@ def release(e):
         if mode == "roam": roam()
 c.bind("<Button-1>", press); c.bind("<B1-Motion>", move); c.bind("<ButtonRelease-1>", release)
 
-def stopmove():  # 진행 중인 이동/점프를 모두 취소
+def stopmove():  # 진행 중인 이동/점프/활동을 모두 취소 (사다리·밭 같은 소품도 치움)
     global gen, busy
-    gen += 1; busy = False
+    gen += 1; busy = False; clear_props()
+
+props = []
+def prop(w, h, x, y, fn):  # 펫 옆에 놓는 소품 창 (사다리, 밭). 펫보다 뒤에 깔림
+    t = tk.Toplevel(root); t.overrideredirect(True); t.attributes("-topmost", True)
+    t.attributes("-transparentcolor", TR); t.config(bg=TR); t.geometry(f"{w}x{h}+{x}+{y}")
+    cv = tk.Canvas(t, width=w, height=h, bg=TR, highlightthickness=0); cv.pack(); fn(cv)
+    props.append(t); root.after(80, raise_pet); return cv
+
+def raise_pet():  # topmost를 껐다 켜서 펫 창을 소품 위로
+    root.attributes("-topmost", False); root.attributes("-topmost", True); root.lift()
+
+def clear_props():
+    for t in props: t.destroy()
+    props.clear()
+
+def sequence(steps, end=None):  # [(지연ms, 함수)...] 를 차례로 실행. 드래그/명령으로 취소되면 중단
+    g = gen
+    def go(i=0):
+        if g != gen: return
+        if i >= len(steps):
+            if end: end()
+            return
+        d, fn = steps[i]
+        def fire():
+            if g != gen: return
+            fn(); go(i + 1)
+        root.after(d, fire)
+    go()
+
+def finish_act():
+    global busy
+    clear_props(); busy = False; draw("normal"); c.delete("bub")
+
+def ladder_art(cv):
+    for x in (8, 52): cv.create_line(x, 2, x, 200, width=6, fill="#a9743a")
+    for y in range(14, 200, 22): cv.create_line(8, y, 52, y, width=5, fill="#c4914f")
+
+imgs, fails, pending, ladder_ph, cab_ph = {}, set(), set(), [], []
+def want(kind, q, size, ok=None, ex="", shape=None):  # 소품 사진을 미리 받아둠 (한 번 받으면 재사용)
+    if not Image: fails.add(kind); return
+    if kind in imgs or kind in pending: return
+    fails.discard(kind); pending.add(kind); fetch_gift(kind, q, size, ok, ex, shape, 20)
+
+def ladder():  # 사다리 사진을 꺼내 놓고 뒷모습으로 올라가 전망을 보고 뛰어내림
+    global busy
+    px, py = root.winfo_x(), root.winfo_y()
+    if py < 170: return
+    busy = True; g = gen
+    want("__ladder__", "wooden ladder", 230, lambda im: im.height > im.width * 1.2)
+    def go():
+        im = random.choice(imgs["__ladder__"]) if imgs.get("__ladder__") else None
+        w, h = im.size if im else (60, 200)
+        def art(cv):
+            if im: ladder_ph[:] = [ImageTk.PhotoImage(im)]; cv.create_image(w // 2, h // 2, image=ladder_ph[0])
+            else: ladder_art(cv)
+        climb = min(144, max(54, h - 90)); dy = climb / 8
+        st = [(0, lambda: (prop(w, h, max(0, px + 120 - w // 2), py + 240 - h, art), draw("climb"), say("사다리 타고 올라가 볼게요!")))]
+        for i in range(1, 9):
+            st.append((300, lambda i=i: (root.geometry(f"+{px}+{round(py - dy * i)}"), draw("climb", f=i % 2))))
+        st.append((400, lambda: (draw("happy"), say("전망 좋다~! 세상이 작아 보여요"))))
+        st.append((2600, lambda: (say("내려갑니다~ 점프!"), hop(px, py))))
+        st.append((900, lambda: None))
+        sequence(st, finish_act)
+    def wait(i=0):
+        if g != gen: return
+        if i >= 3 and ("__ladder__" in imgs or "__ladder__" in fails or i >= 40): go(); return
+        draw("rummage", f=i % 2)
+        if i == 0: say("사다리 가져올게요~")
+        root.after(300, wait, i + 1)
+    wait()
+
+chair_cache, chair_failed, chair_ph = [], [], []
+def chair_art(cv):  # 사진을 못 가져왔을 때 대신 그리는 의자
+    cv.create_rectangle(45, 20, 125, 100, fill="#b07a3c", outline="#5b3a17", width=3)
+    cv.create_rectangle(40, 100, 130, 122, fill="#c4914f", outline="#5b3a17", width=3)
+    for x in (45, 115): cv.create_rectangle(x, 122, x + 12, 165, fill="#a06a2c", outline="#5b3a17", width=3)
+
+def rest():  # 쉴 때: 주머니를 뒤적여 의자(실제 사진)를 꺼내 앉아서 쉼
+    global busy
+    px, py = root.winfo_x(), root.winfo_y(); busy = True; g = gen
+    if not chair_cache:
+        mine = next((f for f in ("chair.png", "chair.jpg") if os.path.exists(os.path.join(HERE, f))), None)  # 내가 넣어둔 의자 사진 우선
+        if mine and Image: chair_cache.append(cutout(Image.open(os.path.join(HERE, mine)), 170, 60))
+    if not chair_cache:
+        if Image: chair_failed.clear(); fetch_gift("__chair__", "upholstered chair chrome legs", 170)
+        else: chair_failed.append(1)
+    def sit_down():
+        im = random.choice(chair_cache) if chair_cache else None
+        def art(cv):
+            if im: chair_ph[:] = [ImageTk.PhotoImage(im)]; cv.create_image(85, 85, image=chair_ph[0])
+            else: chair_art(cv)
+        prop(170, 170, px + 35, py + 70, art)
+        lift = min(86 if im else 57, py)  # 방석 높이까지 올라감 (사진 의자 기준)
+        st = [(0, lambda: (draw("happy"), say("짠~ 의자 꺼냈어요!"))),
+              (900, lambda: (say("올라앉을게요~"), hop(px, py - lift))),
+              (700, lambda: (draw("sit"), say("휴~ 역시 의자가 최고…"))),
+              (4500, lambda: say(random.choice(TALK))),
+              (4500, lambda: (draw("happy"), say("잘 쉬었다! 내려갈게요"), hop(px, py))),
+              (900, lambda: None)]
+        sequence(st, finish_act)
+    def rummage(i=0):
+        if g != gen: return
+        if i >= 6 and (chair_cache or chair_failed or i >= 16): sit_down(); return
+        draw("rummage", f=i % 2)
+        if i == 0: say("좀 쉴까요~ 주머니에 의자가…")
+        if i == 3: say("어디 있더라… 뒤적뒤적")
+        root.after(300, rummage, i + 1)
+    rummage()
+
+GY = 116  # 밭 흙 중심 y (밭 창 기준)
+def cabbage_art(cv, x, g, base):  # 배추 한 포기: g<=0.2 싹 → 점점 커져서 g=1.0이면 다 자란 배추
+    if g <= 0.2:
+        cv.create_line(x, GY, x, GY - 12, width=3, fill="#4f8f2a")
+        cv.create_oval(x - 11, GY - 20, x, GY - 8, fill="#7ac143", outline="#3f7d20")
+        cv.create_oval(x, GY - 24, x + 11, GY - 10, fill="#8fd150", outline="#3f7d20")
+    elif base:
+        im = base.copy(); im.thumbnail((int(34 + 52 * g),) * 2)  # 최종 약 86px: 펫 몸집만 한 완전한 배추
+        cab_ph.append(ImageTk.PhotoImage(im)); cv.create_image(x, GY + 4, image=cab_ph[-1], anchor="s")
+    else:  # 사진이 없으면 길쭉한 배추를 그림
+        h = 30 + 50 * g; w = h * 0.7
+        cv.create_oval(x - w / 2 - 4, GY - h * .8, x + w / 2 + 4, GY + 2, fill="#6fb83a", outline="#3f7d20", width=2)
+        cv.create_oval(x - w / 2, GY - h, x + w / 2, GY + 2, fill="#cbe99a", outline="#5a9a2a", width=2)
+        cv.create_oval(x - w / 3, GY - h * .95, x + w / 3, GY - 4, fill="#eef8d0", outline="")
+        cv.create_line(x, GY - h * .9, x, GY - 2, fill="#8fb85a")
+
+def patch(cv, n, g, base=None):  # 배추밭: n포기, 자란 정도 g(0~1). base가 있으면 실제 배추 사진
+    cv.delete("all"); cab_ph.clear()
+    cv.create_oval(0, 100, 260, 130, fill="#7a5230", outline="#4a2f18", width=2)
+    for i in range(n): cabbage_art(cv, 45 + i * 85, g, base)
+
+def plant():  # 배추(실제 사진) 세 포기를 심고 싹 → 완전한 배추로 키워서 수확
+    global busy
+    px, py = root.winfo_x(), root.winfo_y(); busy = True; g0 = gen
+    want("__cabbage__", "napa cabbage", 120, None, " -seedling -seed -field -plant -garden -flower", (0.6, 1.8))
+    fx = px + 170 if px + 170 + 260 <= SW else max(0, px + 60 - 260)  # 화면 오른쪽 끝이면 밭을 왼쪽에
+    def go():
+        base = random.choice(imgs["__cabbage__"]) if imgs.get("__cabbage__") else None
+        cv = []; st = []
+        st.append((0, lambda: (draw("farm"), say("배추 심을 거예요~"), cv.append(prop(260, 135, fx, py + 112, lambda c_: patch(c_, 0, 0, base))))))
+        for k in range(1, 4):
+            for j in range(6): st.append((350, lambda j=j: draw("farm", f=j % 2)))
+            st.append((200, lambda k=k: (patch(cv[0], k, 0.1, base), say(f"{k}포기 심었어요!"))))
+        for gr, msg in ((0.3, "싹이 났어요!"), (0.5, "쑥쑥 자라는 중~"), (0.7, "무럭무럭~"), (0.85, "거의 다 컸어요!"), (1.0, "완전히 다 자랐어요!")):
+            st.append((900, lambda gr=gr, msg=msg: (patch(cv[0], 3, gr, base), say(msg))))
+        st.append((700, lambda: (draw("happy"), say("대풍작이에요! 배추 수확~"))))
+        st.append((3500, lambda: None))
+        sequence(st, finish_act)
+    def wait(i=0):
+        if g0 != gen: return
+        if i >= 3 and ("__cabbage__" in imgs or "__cabbage__" in fails or i >= 40): go(); return
+        draw("rummage", f=i % 2)
+        if i == 0: say("배추 모종 가져올게요~")
+        root.after(300, wait, i + 1)
+    wait()
 
 def hop(tx, ty, cb=None, i=0, x0=None, y0=None, g=None):  # 통통: 포물선으로 한 번 뜀 + 착지 반동
     if g is None: g = gen; x0, y0 = root.winfo_x(), root.winfo_y(); boing([(0.97, 1.04), (1, 1)], ms=50)
@@ -386,13 +583,13 @@ def done(m):  # 가만히 있기 동작 끝: 사용자가 건드려 상태가 �
     if mood == m and mode == "auto": draw("normal"); c.delete("bub")
 
 def act():  # mode가 auto일 때 알아서 하는 행동: 가만히 / 통통 / 돌아다니기 / 앉기 / 휘파람 / 혼잣말
-    if busy or mode != "auto" or mood != "normal": root.after(8000, act); return
-    k = random.choice(("still", "hop", "hop", "walk", "sit", "whistle", "talk", "talk"))
+    if busy or typing or mode != "auto" or mood != "normal": root.after(8000, act); return
+    k = random.choice(("still", "hop", "hop", "walk", "sit", "whistle", "talk", "talk", "ladder", "plant"))
     if k == "hop": hops(random.randint(3, 5))
+    elif k == "ladder": ladder()
+    elif k == "plant": plant()
     elif k == "walk": goto(root.winfo_x() + random.randint(-300, 300), root.winfo_y() + random.randint(-150, 150))
-    elif k == "sit":
-        draw("sit"); say("휴~ 잠깐 앉을게요"); root.after(4500, lambda: mood == "sit" and say(random.choice(TALK)))
-        root.after(11000, done, "sit")
+    elif k == "sit": rest()
     elif k == "whistle":
         draw("whistle"); say("♪ 휘~ 휘휘~ ♬"); hearts("♪", "#4a7bd8"); root.after(1800, hearts, "♬", "#4a7bd8")
         root.after(5000, done, "whistle")
@@ -405,7 +602,7 @@ CMDS = [  # (키워드, 동작) 위에서부터 먼저 맞는 것 적용
     (("가만", "멈춰", "정지", "그만"), "still"), (("엎드", "푸시업", "팔굽"), "plank"), (("앉",), "sit"),
     (("일어", "서봐", "서있"), "stand"), (("돌아다", "움직", "뛰어다", "놀러", "산책"), "roam"),
     (("통통", "점프", "폴짝", "뛰어"), "hop"), (("휘파람",), "whistle"),
-    (("안녕", "하이", "반가"), "hi"), (("사랑", "좋아", "잘했", "고마", "최고", "귀여"), "love"),
+    (("쉬어", "쉴까", "휴식", "쉬자"), "rest"), (("사다리", "올라가"), "ladder"), (("배추", "농사", "심어", "밭"), "plant"), (("안녕", "하이", "반가"), "hi"), (("사랑", "좋아", "잘했", "고마", "최고", "귀여"), "love"),
 ]
 def qa(text):  # 간단한 질문에 답 (없으면 None)
     t = text.replace(" ", ""); now = datetime.datetime.now()
@@ -425,7 +622,7 @@ def qa(text):  # 간단한 질문에 답 (없으면 None)
         return "제 주머니: " + ", ".join(f"{k} x{v}" for k, v in save["inv"].items()) if save["inv"] else "주머니가 텅 비었어요… 친밀도를 올려주세요!"
     if any(k in t for k in ("기분", "어때")): return "기분 최고예요! 💕" if save["aff"] >= 30 else "나쁘지 않아요… 쓰담쓰담 해주면 더 좋아질 듯!"
     if any(k in t for k in ("도움", "뭐할수", "명령", "할수있")):
-        return "이렇게 말해보세요!\n가만있어 / 앉아 / 엎드려 / 일어나 / 돌아다녀 / 통통 / 휘파람\n몇 시야? / 오늘 며칠? / 1+1은? / 친밀도 / 옷 / 선물"
+        return "이렇게 말해보세요!\n가만있어 / 앉아 / 엎드려 / 일어나 / 돌아다녀 / 통통 / 휘파람 / 쉬어 / 사다리 / 배추\n몇 시야? / 오늘 며칠? / 1+1은? / 친밀도 / 옷 / 선물"
     return None
 
 def talk(text):
@@ -440,22 +637,36 @@ def talk(text):
     elif a_ == "hop": setmode("auto"); draw("normal"); speak("통통통!"); hops(4)
     elif a_ == "whistle":
         setmode("auto"); draw("whistle"); say("♪ 휘~ 휘휘~ ♬"); hearts("♪", "#4a7bd8"); root.after(5000, done, "whistle")
+    elif a_ == "rest": setmode("auto"); draw("normal"); rest()
+    elif a_ == "ladder": setmode("auto"); draw("normal"); ladder()
+    elif a_ == "plant": setmode("auto"); draw("normal"); plant()
     elif a_ == "hi": speak("안녕하세요! 오늘도 같이 힘내요 🙌")
     elif a_ == "love": hearts(); speak("헤헤 저도요~ 💕")
     else: speak("음… 잘 모르겠어요 (갸우뚱)\n'가만있어', '앉아', '엎드려', '돌아다녀', '일어나' 라고 해보세요! ('도움말'도 물어보세요)", 7000)
 
-chat = []
-def ask(e=None):
-    if chat: chat[0].lift(); chat[0].focus_force(); return
-    w = tk.Toplevel(root); chat.append(w); w.title("Claude에게 말하기"); w.attributes("-topmost", True)
-    w.geometry(f"+{max(0, root.winfo_x() - 270)}+{min(SH - 80, root.winfo_y() + H - 60)}")
-    en = tk.Entry(w, width=32, font=("Malgun Gothic", 11)); en.pack(padx=8, pady=8)
-    def close(_=None): chat.clear(); w.destroy()
+typing = False
+def ask(e=None):  # 우클릭: 머리 위 말풍선이 입력칸으로 바뀜 (커서 깜빡임). Enter=보내기, Esc=취소
+    global typing
+    if typing: return
+    typing = True; c.delete("bub")
+    x0, y0, x1, y1 = 22, 70, 218, 104
+    c.create_polygon(112, y1 - 1, 128, y1 - 1, 120, y1 + 13, fill="white", outline="", tags="chat")
+    c.create_line(112, y1, 120, y1 + 13, 128, y1, fill="#888", tags="chat")
+    c.create_polygon(x0+10, y0, x1-10, y0, x1, y0, x1, y0+10, x1, y1-10, x1, y1, x1-10, y1, x0+10, y1, x0, y1, x0, y1-10, x0, y0+10, x0, y0,
+                     smooth=True, fill="white", outline="#888", tags="chat")
+    c.create_line(113, y1, 127, y1, fill="white", width=2, tags="chat")
+    en = tk.Entry(c, width=24, bd=0, bg="white", fg="#222", font=("Malgun Gothic", 10), highlightthickness=0,
+                  insertbackground="#222", insertwidth=2, insertontime=500, insertofftime=350)
+    c.create_window(120, 87, window=en, tags="chat")
+    def close(_=None):
+        global typing
+        typing = False; c.delete("chat"); en.destroy()
     def send(_=None):
-        if en.get().strip(): talk(en.get())
-        close()
-    en.bind("<Return>", send); en.bind("<Escape>", close); w.protocol("WM_DELETE_WINDOW", close)
-    w.after(80, lambda: (w.focus_force(), en.focus_force()))
+        t = en.get().strip(); close()
+        if t: talk(t)
+    en.bind("<Return>", send); en.bind("<Escape>", close)
+    root.after(400, lambda: en.winfo_exists() and en.bind("<FocusOut>", close))  # 다른 데 클릭하면 닫힘
+    root.after(50, lambda: (root.focus_force(), en.focus_force()))
 c.bind("<Button-3>", ask)
 
 st = dict(x=None, dir=0, rev=0, t=0.0)
@@ -486,7 +697,11 @@ threading.Thread(target=serve, daemon=True).start()
 
 def poll():
     while not IMGQ.empty():
-        n, im = IMGQ.get(); give(n, False, im)
+        n, im = IMGQ.get()
+        if n == "__chair__": chair_cache.append(im) if im else chair_failed.append(1)
+        elif n in ("__ladder__", "__cabbage__"): pending.discard(n); imgs.setdefault(n, []).append(im) if im else fails.add(n)
+        elif n.startswith("__outfit__"): give(n[10:], True, im)
+        else: give(n, False, im)
     while not cmds.empty():
         k = cmds.get()
         if k == "sorry": setmode("auto"); show(random.choice(SORRY), "sorry")
