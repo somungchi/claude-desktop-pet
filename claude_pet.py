@@ -25,7 +25,7 @@ GIFTS = [("황금 목걸이", "gold necklace"), ("지렁이", "earthworm"), ("�
          ("컵라면", "instant noodles cup"), ("후라이드 치킨", "fried chicken"), ("피자 한 판", "pizza"),
          ("공룡 화석", "dinosaur fossil"), ("삽", "shovel"), ("고구마", "sweet potato"),
          ("두루마리 휴지", "toilet paper roll"), ("다이아몬드", "diamond")]  # 선물 이미지는 Wikimedia Commons 검색
-CATS = [("모자", ["밀짚모자", "티아라", "이모 앞머리", "갸루 소라빵머리", "유치원 노란 모자"]), ("상의", ["빨간 후드", "이모 스웨터", "갸루 크롭탑", "하늘색 카라티"]), ("하의", ["청치마", "체크 치마", "이모 체인 치마", "갸루 미니스커트", "유치원 반바지"]), ("허리", ["징 벨트"]), ("손목", ["체크 손목밴드"])]  # 한 부위에는 하나만 입음
+CATS = [("모자", ["밀짚모자", "티아라", "이모 앞머리", "갸루 소라빵머리", "유치원 노란 모자"]), ("상의", ["빨간 후드", "이모 스웨터", "갸루 크롭탑", "하늘색 카라티", "비키니 상의"]), ("하의", ["청치마", "체크 치마", "이모 체인 치마", "갸루 미니스커트", "유치원 반바지", "비키니 하의"]), ("허리", ["징 벨트"]), ("손목", ["체크 손목밴드"])]  # 한 부위에는 하나만 입음
 OUTFITS = [o for _, lst in CATS for o in lst]
 CAT_OF = {o: cat for cat, lst in CATS for o in lst}
 PLACES = ["길가 쓰레기통에서", "옆집 빨랫줄에서", "분실물 센터에서", "택배 상자 밑에서", "공원 벤치에서", "제 주머니를 뒤졌더니"]
@@ -45,7 +45,7 @@ def wear_on(o):  # 옷 입기: 같은 부위에 입고 있던 건 벗음
     save["outfit"][:] = [x for x in save["outfit"] if CAT_OF[x] != CAT_OF[o]] + [o]
 for _o in list(save["outfit"]): wear_on(_o)  # 예전 저장에 겹쳐 있던 것 정리
 save["owned"] = [x for x in save.setdefault("owned", list(save["outfit"])) if x in OUTFITS]
-save["owned"] += [x for x in ("유치원 노란 모자", "하늘색 카라티", "유치원 반바지", "징 벨트", "체크 손목밴드", "이모 앞머리", "이모 스웨터", "이모 체인 치마", "갸루 소라빵머리", "갸루 크롭탑", "갸루 미니스커트") if x not in save["owned"]]  # 목도리는 선물로 바로 지급  # 가진 옷 (입은 옷은 그중 일부)
+save["owned"] += [x for x in ("유치원 노란 모자", "하늘색 카라티", "유치원 반바지", "징 벨트", "체크 손목밴드", "이모 앞머리", "이모 스웨터", "이모 체인 치마", "갸루 소라빵머리", "갸루 크롭탑", "갸루 미니스커트", "비키니 상의", "비키니 하의") if x not in save["owned"]]  # 목도리는 선물로 바로 지급  # 가진 옷 (입은 옷은 그중 일부)
 GIFT_DIR = os.path.join(HERE, "gift_img"); os.makedirs(GIFT_DIR, exist_ok=True)  # 가방에 보여줄 선물 사진 (git 제외)
 save.setdefault("coin", 0); save.setdefault("skin_until", 0)
 PRICE = {"황금 변기": 600, "다이아몬드": 800, "금괴": 500, "황금 목걸이": 400, "우승 트로피": 300, "초대형 오리 인형": 120, "삽": 80, "공룡 화석": 350,
@@ -56,7 +56,8 @@ def flush():
     json.dump(save, open(SAVE, "w", encoding="utf-8"), ensure_ascii=False)
 
 W, H, TR = 340, 290, "#010203"  # 오른쪽 100px은 선물 이미지를 손 옆에 내밀 자리
-S = 0.6  # 캐릭터 크기 배율 (더 작게: 0.5)
+S = 0.54  # 캐릭터 크기 배율 (더 작게: 0.5)
+WX = 1.12  # 가로로 살짝 늘림
 root = tk.Tk()
 root.overrideredirect(True); root.attributes("-topmost", True)
 root.attributes("-transparentcolor", TR); root.config(bg=TR)
@@ -87,8 +88,7 @@ def limbs(m, f, arm):
         return [(52, 168 + round(3 * f), 74, 200 + round(3 * f)), (166, 168, 188, 200), (80, 200, 102, 232), (138, 200, 160, 232)]
     if m == "game":  # 게임기 양옆을 잡고 버튼 누르는 쪽 팔이 살짝 움직임
         return [(50, 160, 72, 192), (168, 160 + round(4 * f), 190, 192 + round(4 * f)), (80, 200, 102, 232), (138, 200, 160, 232)]
-    if m == "work":  # 팔을 키보드 높이로 내리고 번갈아 두드림
-        return [(44, 146 + round(10 * f), 66, 178 + round(10 * f)), (174, 146 + round(10 * (1 - f)), 196, 178 + round(10 * (1 - f))), (80, 200, 102, 232), (138, 200, 160, 232)]
+    if m == "work": return [(-2000, 0, -1980, 20), (-2000, 0, -1980, 20), (80, 200, 102, 232), (138, 200, 160, 232)]  # 팔은 노트북 앞에 사선으로 따로 그림 (draw의 work)
     if m == "gym":  # 덤벨을 들어올릴수록 팔이 올라감
         y = round(140 - 85 * f); return [(50, y, 72, y + 30), (168, y, 190, y + 30), (80, 200, 102, 232), (138, 200, 160, 232)]
     if m == "jack":  # 팔 벌려 뛰기
@@ -141,7 +141,7 @@ def worn_image(n):
     if n not in OUTFIT_SPEC: return None
     path = os.path.join(OUTFIT_DIR, n + ".png")
     if not (Image and os.path.exists(path)): return None
-    im = Image.open(path).convert("RGBA"); w = max(1, int(OUTFIT_SPEC[n][0] * S)); h = max(1, int(im.height * w / im.width))
+    im = Image.open(path).convert("RGBA"); w = max(1, int(OUTFIT_SPEC[n][0] * S * WX)); h = max(1, int(im.height * w / im.width))
     worn_ph[n] = ImageTk.PhotoImage(im.resize((w, h), Image.LANCZOS)); return worn_ph[n]
 
 def wear(o, front, arms, legs):  # 입은 옷: 사진 누끼 우선, 없으면 그림 (선글라스는 앞모습일 때만)
@@ -190,6 +190,17 @@ def wear(o, front, arms, legs):  # 입은 옷: 사진 누끼 우선, 없으면 �
             c.create_rectangle(ax0 - 1, yy, ax1 + 1, yy + 10, fill="white", outline=OUTL, width=2, **o)
             for i, xx in enumerate(range(ax0, ax1, 6)):
                 c.create_rectangle(xx, yy + 5 * (i % 2), xx + 6, yy + 5 * (i % 2) + 5, fill="#1a1418", outline="", **o)
+        elif n == "비키니 상의":  # 청록 삼각 컵 + 흰 물방울 + 양옆 끈 + 가운데 매듭
+            B = "#2ec4d6"
+            c.create_line(60, 174, 82, 180, fill=B, width=3, **o); c.create_line(158, 180, 180, 174, fill=B, width=3, **o)
+            c.create_polygon(80, 182, 114, 182, 97, 159, fill=B, outline=OUTL, width=2, **o); c.create_polygon(126, 182, 160, 182, 143, 159, fill=B, outline=OUTL, width=2, **o)
+            c.create_line(114, 181, 126, 181, fill=B, width=3, **o); c.create_oval(116, 177, 124, 185, fill="#1fa0b0", outline=OUTL, **o)
+            for (dx, dy) in ((92, 175), (102, 175), (138, 175), (148, 175), (97, 169), (143, 169)): c.create_oval(dx - 2, dy - 2, dx + 2, dy + 2, fill="white", outline="", **o)
+        elif n == "비키니 하의":  # 청록 팬티 + 흰 물방울 + 옆 끈
+            B = "#2ec4d6"
+            c.create_line(62, 190, 86, 190, fill=B, width=3, **o); c.create_line(154, 190, 178, 190, fill=B, width=3, **o)
+            c.create_polygon(86, 186, 154, 186, 142, 197, 120, 204, 98, 197, fill=B, outline=OUTL, width=2, **o)
+            for (dx, dy) in ((98, 191), (120, 191), (142, 191), (109, 197), (131, 197)): c.create_oval(dx - 2, dy - 2, dx + 2, dy + 2, fill="white", outline="", **o)
         elif n == "유치원 노란 모자":  # 병아리 같은 노란 둥근 모자 + 눈 두 개 + 주황 부리
             c.create_oval(56, 90, 184, 112, fill="#f2c92e", outline=OUTL, width=2, **o)  # 챙
             c.create_arc(70, 56, 170, 132, start=0, extent=180, style="chord", fill="#f7d94c", outline="", **o)  # 둥근 윗부분 (챙 윗선을 덮음)
@@ -391,9 +402,11 @@ def draw(m, gift=None, f=0):
         c.create_polygon(76, 174, 120, 182, 164, 174, 164, 178, 120, 186, 76, 178, fill="#fffdf2", outline=OUTL, **o)  # 윗면의 책장 단면
         if f > 0.04: c.create_polygon(120, 182, 120 + 38 * f, 172 - 6 * f, 120 + 38 * f, 176 - 6 * f, 120, 186, fill="#f3ecd2", outline=OUTL, **o)
     elif m == "work":  # 노트북 작업: 화면은 펫 쪽, 우리에겐 덮개 뒷면. f가 번갈아 키보드를 두드림
+        for sx, tx, k in ((64, 90, f), (176, 150, 1 - f)):  # 어깨에서 노트북 쪽으로 사선으로 내려오는 짧은 팔 (노트북 뒤로 들어감). 손끝이 번갈아 톡톡
+            ty = 198 + round(6 * k); aw = round(18 * S)  # 선 굵기는 body 축소(scale)에 따라 줄지 않으므로 미리 맞춤
+            c.create_line(sx, 174, tx, ty, width=aw + 4, fill=OUTL, capstyle="round", **o); c.create_line(sx, 174, tx, ty, width=aw, fill=ORANGE, capstyle="round", **o)
         rrect(68, 150, 172, 198, r=8, fill="#b9bfc8", outline=OUTL, width=2, **o); c.create_oval(112, 166, 128, 182, fill="#dfe3e8", outline="#8a909a", **o)
         c.create_polygon(54, 200, 186, 200, 196, 214, 44, 214, fill="#9aa0aa", outline=OUTL, width=2, **o)
-        c.create_oval(116, 170, 124, 178, fill="#ffd34d" if f else "#dfe3e8", outline="", **o)  # 손 대신 로고 불빛이 깜빡이며 타자 중 표시
     elif m == "game":  # 휴대용 게임기 (화면이 깜빡이고 버튼을 누름)
         rrect(72, 168, 168, 202, r=10, fill="#2b2f4a", outline=OUTL, width=2, **o)
         c.create_rectangle(96, 173, 144, 197, fill="#8af0b0" if f else "#c8ffd8", outline=OUTL, **o)
@@ -406,9 +419,13 @@ def draw(m, gift=None, f=0):
     finish()
 
 def finish():  # 축소 + 말랑 변형 적용, 친밀도 표시
-    c.scale("body", 120, 235, S, S)
+    c.scale("body", 120, 235, S * WX, S)
     c.scale("body", 120, 235, sq[0], sq[1])
-    c.delete("aff"); c.create_text(120, 272, text=f"♥ {save['aff']}/{MAX_AFF}", fill="#ff5d8f",
+    c.delete("aff"); nm = save.get("name") or "클로드"
+    w = len(nm) * 7 + 18  # 이름표: 단색 바탕 위에 글씨를 올려 투명색 가장자리 때문에 깨져 보이지 않게
+    c.create_polygon(120 - w, 246, 120 + w, 246, 120 + w, 264, 120 - w, 264, smooth=False, fill="#fff7ec", outline="#d9b99b", tags="aff")
+    c.create_text(120, 255, text=nm, fill="#5a3a2e", font=("Malgun Gothic", 10, "bold"), tags="aff")
+    c.create_text(120, 272, text=f"♥ {save['aff']}/{MAX_AFF}", fill="#ff5d8f",
                                    font=("Malgun Gothic", 12, "bold"), tags="aff")
 
 def draw_plank(f):  # 엎드려 뻗쳐: 옆모습으로 팔굽혀펴기 (f=1이면 몸이 내려감)
@@ -470,7 +487,7 @@ def hearts(sym="♥", color="#ff5d8f"):
         root.after(random.randint(0, 300), rise)
 
 def conv(e):  # 축소 전 좌표로 환산
-    return 120 + (e.x - 120) / S, 235 + (e.y - 235) / S
+    return 120 + (e.x - 120) / (S * WX), 235 + (e.y - 235) / S
 
 IMGQ = queue.Queue()
 UA = {"User-Agent": "ClaudePetToy/1.0"}
@@ -680,6 +697,14 @@ def eq_icon(n):  # 장비 아이콘: 직접 그린 그림 (64x64). 한 번 그�
     elif n == "갸루 미니스커트":
         PG([(14, 14), (50, 14), (60, 44), (4, 44)], fill="#ff9ac6", outline=O, width=K); PG([(4, 44), (60, 44), (56, 54), (44, 48), (32, 54), (20, 48), (8, 54)], fill="white", outline=O, width=K)
         for hx in (18, 32, 46): E(hx - 3, 26, hx + 3, 32, fill="white")
+    elif n == "비키니 상의":
+        L([(4, 30), (12, 38)], 2.5, fill="#2ec4d6"); L([(52, 38), (60, 30)], 2.5, fill="#2ec4d6")
+        PG([(10, 40), (31, 40), (20, 16)], fill="#2ec4d6", outline=O, width=K); PG([(33, 40), (54, 40), (43, 16)], fill="#2ec4d6", outline=O, width=K)
+        for (dx, dy) in ((16, 34), (24, 34), (40, 34), (48, 34), (20, 28), (44, 28)): E(dx - 2, dy - 2, dx + 2, dy + 2, fill="white")
+    elif n == "비키니 하의":
+        L([(4, 17), (14, 17)], 2.5, fill="#2ec4d6"); L([(50, 17), (60, 17)], 2.5, fill="#2ec4d6")
+        PG([(14, 14), (50, 14), (44, 28), (32, 34), (20, 28)], fill="#2ec4d6", outline=O, width=K)
+        for (dx, dy) in ((22, 19), (32, 19), (42, 19), (27, 25), (37, 25)): E(dx - 2, dy - 2, dx + 2, dy + 2, fill="white")
     elif n == "청치마":
         PG([(14, 14), (50, 14), (60, 52), (4, 52)], fill="#3b64a8", outline=O, width=K); R(14, 14, 50, 21, fill="#2c4f8a", outline=O, width=K // 2); L([(8, 46), (56, 46)], 1.5, fill="#8fb0e0")
     elif n == "체크 치마":
@@ -1084,7 +1109,7 @@ def sticky(title, body, bg="#fff3a8", fg="#8a5a00"):  # 펫 옆에 쪽지 창
     t.geometry(f"+{max(0, root.winfo_x() - 330)}+{max(0, root.winfo_y() + 30)}")
     tk.Label(t, text=title, bg=bg, fg=fg, font=("Malgun Gothic", 11, "bold")).pack(padx=18, pady=(14, 6), anchor="w")
     tk.Label(t, text=body, bg=bg, font=("Malgun Gothic", 10), justify="left", wraplength=280).pack(padx=18, anchor="w")
-    tk.Label(t, text="- 클로드 드림", bg=bg, fg=fg, font=("Malgun Gothic", 9)).pack(padx=18, pady=(10, 2), anchor="e")
+    tk.Label(t, text=f"- {pname()} 드림", bg=bg, fg=fg, font=("Malgun Gothic", 9)).pack(padx=18, pady=(10, 2), anchor="e")
     tk.Button(t, text="고마워요", command=t.destroy, font=("Malgun Gothic", 9)).pack(pady=(2, 12))
 
 def read_book():  # 책 읽기: 조용히 페이지를 넘기고(넘어가는 페이지가 부드럽게), 가끔만 한마디
@@ -1520,7 +1545,7 @@ def qa(text):  # 간단한 질문에 답 (없으면 None)
             except Exception: return "음… 그건 계산이 안 돼요 😵"
     if any(k in t for k in ("몇시", "시간")): return f"지금은 {now:%H시 %M분}이에요!"
     if any(k in t for k in ("며칠", "날짜", "요일")): return f"오늘은 {now:%Y년 %m월 %d일} {'월화수목금토일'[now.weekday()]}요일이에요!"
-    if any(k in t for k in ("이름", "누구")): return "저는 Claude예요! 당신 곁에서 코딩 도와주는 작은 펫이에요 🧡"
+    if any(k in t for k in ("이름", "누구")): return f"저는 {pname()}{iyo(pname())}! 당신 곁에서 코딩 도와주는 작은 펫이에요 🧡 (이름은 우클릭 > 이름 짓기로 바꿀 수 있어요)"
     if any(k in t for k in ("친밀도", "호감")): return f"친밀도는 {save['aff']}/{MAX_AFF}이에요. 쓰다듬어 주세요 🥺"
     if any(k in t for k in ("옷", "입고", "입었", "선물", "가진", "주머니", "인벤", "가방")):
         bag(); return "가방을 열었어요! 옷은 눌러서 마음대로 입히고 벗길 수 있어요."
@@ -1550,7 +1575,7 @@ def chat(text):  # 모르는 말: claude -p 를 같은 세션(--resume)으로 �
         try:
             os.makedirs(CHAT_DIR, exist_ok=True)
             cmd = [shutil.which("claude") or "claude", "-p", text, "--output-format", "json", "--model", "haiku", "--tools", "",
-                   "--append-system-prompt", "너는 사용자의 데스크톱 펫 '클로드'다. 귀엽고 다정한 말투로 한국어 3~5문장, 300자 이내로 충분히 자세히 답한다. 도구는 쓸 수 없다."]
+                   "--append-system-prompt", "너는 사용자의 데스크톱 펫 '" + pname() + "'다. 귀엽고 다정한 말투로 한국어 3~5문장, 300자 이내로 충분히 자세히 답한다. 도구는 쓸 수 없다."]
             if sid: cmd += ["--resume", sid]
             r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", timeout=120, cwd=CHAT_DIR, env=dict(os.environ, PET_CHAT="1"), creationflags=0x08000000)
             j = json.loads(r.stdout); chatq.put((j.get("session_id"), (j.get("result") or "").strip() or "음… 할 말을 못 찾았어요"))
@@ -1558,7 +1583,20 @@ def chat(text):  # 모르는 말: claude -p 를 같은 세션(--resume)으로 �
             chatq.put((None, "앗, 지금은 대답을 못 하겠어요 (" + type(e).__name__ + ")"))
     threading.Thread(target=run, daemon=True).start()
 
+def pname(): return save.get("name") or "클로드"
+def iyo(w): return "이에요" if "가" <= w[-1] <= "힣" and (ord(w[-1]) - 0xAC00) % 28 else "예요"  # 받침 있으면 이에요, 없으면 예요
+def rename(n):  # 펫 이름 바꾸기
+    n = n.strip()[:10]
+    if not n: return
+    save["name"] = n; flush(); hearts(); speak(f"좋아요! 이제부터 저는 {n}{iyo(n)}~ 많이 불러주세요 💕", 6000)
+def ask_name():  # 우클릭 메뉴: 이름 짓기 창
+    import tkinter.simpledialog as sd
+    n = sd.askstring("이름 짓기", f"새 이름을 지어주세요 (지금: {pname()})", parent=root)
+    if n: rename(n)
+
 def talk(text):
+    mm = re.search(r"이름(?:을|은|이)?\s*([가-힣A-Za-z0-9]{1,10}?)(?:으로|로)?\s*(?:바꿔|바꾸|정할|지을|지어|해줘|할게|할래|하자|이야|야)(?!\S)", text) or re.search(r"([가-힣A-Za-z0-9]{1,10}?)(?:이)?(?:라고|라구)\s*(?:불러|부를|해줘|할게)", text)
+    if mm and mm.group(1) not in ("뭐", "뭔", "뭘", "누구", "내", "니", "너"): rename(mm.group(1)); return
     r = qa(text)
     if r: speak(r, 7000); return
     t = text.replace(" ", ""); a_ = next((a for ks, a in CMDS if any(k in t for k in ks)), None)
@@ -1616,7 +1654,7 @@ def rmenu(e):  # 우클릭: 목록에서 고르기
     sk = tk.Menu(m, tearoff=0, font=("Malgun Gothic", 10))
     for i, (nm, col) in enumerate(SKINS): sk.add_command(label=("● " if i == save.get("skin", 0) else "○ ") + nm, command=lambda i=i: set_skin(i))
     m.add_cascade(label="🎨 피부톤", menu=sk)
-    m.add_command(label="💬 말 걸기", command=ask); m.add_command(label="🎒 인벤토리", command=bag); m.add_separator()
+    m.add_command(label="✏ 이름 짓기", command=ask_name); m.add_command(label="💬 말 걸기", command=ask); m.add_command(label="🎒 인벤토리", command=bag); m.add_separator()
     for lb, k in (("💻 일하기", "work"), ("🏠 퇴근하기", "leave"), ("🏋 운동하기", "workout"), ("☕ 커피 마시기", "coffee"), ("📖 책 읽기", "read"), ("🎮 게임하기", "game"), ("😴 졸기", "doze"), ("🍚 밥 먹기", "eat"), ("🚿 샤워하기", "shower"), ("🔮 오늘의 운세", "fortune"), ("🕺 브레이크댄스", "dance")):
         m.add_command(label=lb, command=lambda k=k: do_act(k))
     try: m.tk_popup(e.x_root, e.y_root)
@@ -1671,7 +1709,7 @@ def poll():
     while not chatq.empty():
         sid_, ans = chatq.get(); chatting[0] = False; c.delete("think")
         if sid_ and sid_ != save.get("chat_sid"): save["chat_sid"] = sid_; flush()
-        if len(ans) > 70: sticky("클로드의 답변", ans); speak("길어서 쪽지로 적었어요~", 8000)  # 말풍선엔 안 들어가는 긴 답
+        if len(ans) > 70: sticky(f"{pname()}의 답변", ans); speak("길어서 쪽지로 적었어요~", 8000)  # 말풍선엔 안 들어가는 긴 답
         else: speak(ans, max(15000, 200 * len(ans)))  # 짧은 답은 말풍선으로, 길수록 오래
     while not cmds.empty():
         k = cmds.get()
