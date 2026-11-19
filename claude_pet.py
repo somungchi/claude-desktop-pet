@@ -319,8 +319,13 @@ def draw(m, gift=None, f=0):
     front = m not in ("sorry", "hit", "climb")
     if not front:  # 뒤돌아서 엉덩이를 내밀기 (얼굴 없음)
         if m != "climb":  # 사다리 오를 땐 뒷모습만 (엉덩이 볼터치 없음)
-            c.create_oval(66, 140, 120, 205, fill="#f4a7a0", outline=OUTL, width=2, **o)
-            c.create_oval(120, 140, 174, 205, fill="#f4a7a0", outline=OUTL, width=2, **o)
+            for x0, x1, sx in ((66, 120, 1), (120, 174, -1)):  # 입체감: 어두운 바닥 → 밝은 몸 → 하이라이트 (구 모양 음영). 빛은 바깥 위쪽에서
+                c.create_oval(x0, 140, x1, 205, fill="#e08c87", outline=OUTL, width=2, **o)
+                c.create_oval(x0 + (2 if sx > 0 else 6), 142, x1 - (6 if sx > 0 else 2), 196, fill="#f4a7a0", outline="", **o)
+                hx = x0 + 8 if sx > 0 else x1 - 20
+                c.create_oval(hx, 148, hx + 12, 166, fill="#fbd3cd", outline="", **o)
+            c.create_line(120, 146, 120, 204, fill="#b9625e", width=3, **o)  # 엉덩이 골
+            c.create_oval(116, 160, 124, 198, fill="#cf7a75", outline="", **o); c.create_line(120, 146, 120, 204, fill="#b9625e", width=2, **o)
         if m == "hit":
             anger(120, 172, o)
     else:
