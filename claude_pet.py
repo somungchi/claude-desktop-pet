@@ -83,11 +83,22 @@ def rrect(x0, y0, x1, y1, r=8, **kw):  # 모서리가 둥근 사각형 (smooth �
     return c.create_polygon(pts, smooth=True, **kw)
 
 def lerp(a, b, f): return tuple(round(x + (y - x) * f) for x, y in zip(a, b))
-def limbs(m, f, arm):
-    if m == "read":  # 책 양옆을 팔로 잡음 (별도 손을 그리지 않음)
-        return [(52, 168 + round(3 * f), 74, 200 + round(3 * f)), (166, 168, 188, 200), (80, 200, 102, 232), (138, 200, 160, 232)]
-    if m == "game":  # 게임기 양옆을 잡고 버튼 누르는 쪽 팔이 살짝 움직임
-        return [(50, 160, 72, 192), (168, 160 + round(4 * f), 190, 192 + round(4 * f)), (80, 200, 102, 232), (138, 200, 160, 232)]
+def grip(o, *arms):  # 어깨(sx,sy)에서 물건의 잡는 곳(tx,ty)까지 사선으로 뻗은 팔. 물건 앞에 그려 손이 물건을 잡은 것처럼 보임
+    aw = round(18 * S)  # 선 굵기는 body 축소(scale)에 따라 줄지 않으므로 미리 맞춤
+    for sx, sy, tx, ty in arms:
+        c.create_line(sx, sy, tx, ty, width=aw + 4, fill=OUTL, capstyle="round", **o); c.create_line(sx, sy, tx, ty, width=aw, fill=ORANGE, capstyle="round", **o)
+def limbs(m, f, arm):  # 팔다리를 전체적으로 짧게: 팔은 몸에서 먼 쪽 끝을 6, 다리는 발 쪽을 7 줄임
+    out = []
+    for i, (x0, y0, x1, y1) in enumerate(limbs_(m, f, arm)):
+        if y1 - y0 > 16 and x0 > -1000:
+            if i < 2:
+                if abs(y1 - 148) >= abs(y0 - 148): y1 -= 6
+                else: y0 += 6
+            else: y1 -= 7
+        out.append((x0, y0, x1, y1))
+    return out
+def limbs_(m, f, arm):
+    if m in ("read", "game", "eat"): return [(-2000, 0, -1980, 20), (-2000, 0, -1980, 20), (80, 200, 102, 232), (138, 200, 160, 232)]  # 팔은 물건을 잡도록 draw에서 따로 그림 (grip)
     if m == "work": return [(-2000, 0, -1980, 20), (-2000, 0, -1980, 20), (80, 200, 102, 232), (138, 200, 160, 232)]  # 팔은 노트북 앞에 사선으로 따로 그림 (draw의 work)
     if m == "gym":  # 덤벨을 들어올릴수록 팔이 올라감
         y = round(140 - 85 * f); return [(50, y, 72, y + 30), (168, y, 190, y + 30), (80, 200, 102, 232), (138, 200, 160, 232)]
@@ -383,6 +394,7 @@ def draw(m, gift=None, f=0):
         for gx in (104, 118, 130): c.create_oval(gx, 166, gx + 4, 170, fill="#e8e0c8", **o)
         c.create_line(190, 176 - 24 * f, 134, 172 - 20 * f, width=4, fill="#b0b0b0", **o); c.create_oval(126, 167 - 20 * f, 138, 177 - 20 * f, fill="#c8c8c8", outline=OUTL, **o)
         if f > 0.5: c.create_oval(124, 166 - 20 * f, 130, 172 - 20 * f, fill="white", **o)
+        grip(o, (62, 174, 88, 196), (178, 172, 188, 176 - round(24 * f)))  # 왼손은 밥그릇, 오른손은 숟가락 자루를 잡음
     elif m == "gym":  # 운동: 머리띠 + 덤벨. 위로 갈수록 힘들어서 바들바들 떨림
         c.create_rectangle(62, 98, 178, 106, fill="#e23b3b", outline=OUTL, **o); c.create_polygon(178, 98, 192, 92, 190, 108, 178, 106, fill="#e23b3b", outline=OUTL, **o)
         by = round(140 - 85 * f) + 8
@@ -401,6 +413,7 @@ def draw(m, gift=None, f=0):
         c.create_line(120, 184, 120, 214, width=3, fill=DARK, **o); c.create_rectangle(132, 190, 156, 196, fill="#f2d98a", outline="", **o)
         c.create_polygon(76, 174, 120, 182, 164, 174, 164, 178, 120, 186, 76, 178, fill="#fffdf2", outline=OUTL, **o)  # 윗면의 책장 단면
         if f > 0.04: c.create_polygon(120, 182, 120 + 38 * f, 172 - 6 * f, 120 + 38 * f, 176 - 6 * f, 120, 186, fill="#f3ecd2", outline=OUTL, **o)
+        grip(o, (62, 172, 80, 198), (178, 172, 160, 198))  # 책 양옆을 잡음
     elif m == "work":  # 노트북 작업: 화면은 펫 쪽, 우리에겐 덮개 뒷면. f가 번갈아 키보드를 두드림
         for sx, tx, k in ((64, 90, f), (176, 150, 1 - f)):  # 어깨에서 노트북 쪽으로 사선으로 내려오는 짧은 팔 (노트북 뒤로 들어감). 손끝이 번갈아 톡톡
             ty = 198 + round(6 * k); aw = round(18 * S)  # 선 굵기는 body 축소(scale)에 따라 줄지 않으므로 미리 맞춤
@@ -413,6 +426,7 @@ def draw(m, gift=None, f=0):
         c.create_rectangle(104 + 10 * f, 180, 112 + 10 * f, 188, fill="#2b2f4a", **o); c.create_rectangle(128, 186, 136, 192, fill="#d83a3a", **o)
         c.create_rectangle(80, 184, 90, 188, fill="#ddd", **o); c.create_rectangle(83, 181, 87, 191, fill="#ddd", **o)
         c.create_oval(150, 182 + 2 * f, 158, 190 + 2 * f, fill="#e8506a", **o); c.create_oval(156, 178, 164, 186, fill="#f2c230", **o)
+        grip(o, (62, 172, 80, 190), (178, 172, 160, 190 + round(4 * f)))  # 게임기 양옆을 잡고 오른손은 버튼을 누름
     if gift:
         if gift.strip(): icon(gift, 236, 132, o)
     if m == "sit": c.move("body", 0, 10)
